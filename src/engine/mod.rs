@@ -1,3 +1,4 @@
+// #claude
 //! background click threads; the ui pushes a config snapshot each frame.
 
 pub mod timing;
@@ -603,7 +604,9 @@ fn key_poll_loop(
             let _ = tx.send(ToggleReq::BlockHit);
             ctx.request_repaint();
         });
-        if snap.panic_vk != 0 {
+        // a mouse button as panic key would quit on every click (old saved configs can still
+        // contain one), so only keyboard keys count
+        if snap.panic_vk != 0 && !(0x01..=0x06).contains(&snap.panic_vk) {
             let p = os::key_held(snap.panic_vk);
             if p && !panic_was {
                 sig.panic.store(true, Ordering::Relaxed);

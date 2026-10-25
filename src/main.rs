@@ -1,4 +1,4 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// #claude
 
 use eframe::egui;
 use egui::{
@@ -65,9 +65,12 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([720.0, 800.0])
-            .with_decorations(false)
-            .with_transparent(true)
             .with_resizable(false)
+            // native macos window: real traffic lights + native rounded corners and shadow, with
+            // our content drawn underneath the (hidden) title bar
+            .with_fullsize_content_view(true)
+            .with_titlebar_shown(false)
+            .with_title_shown(false)
             .with_icon(Arc::new(load_icon())),
         // eframe always loads persisted geometry (persist_window only gates saving), so force
         // the size in window_builder: it runs last and overrides the restored geometry.
@@ -561,7 +564,12 @@ impl CitronApp {
         self.start_system = c.start_system;
         self.tray = c.tray;
         self.autoupdate = c.autoupdate;
-        self.panic_key = c.panic_key;
+        // drop a saved mouse-button panic key (it quit the app on every click)
+        self.panic_key = if c.panic_key.ends_with("Click") || c.panic_key.starts_with("Mouse") {
+            default_panic_key()
+        } else {
+            c.panic_key
+        };
         self.screen_hide = c.screen_hide;
         self.taskbar_key = c.taskbar_key;
         self.blockhit = c.blockhit;
@@ -647,9 +655,9 @@ impl CitronApp {
                 // panic = force-quit, let the close through instead of hiding
                 self.quitting = true;
             } else {
+                // macos: hide the whole app, the menu bar icon brings it back
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-                self.hidden = true;
+                os::hide_app();
             }
         }
         if self.autostart_applied != Some(self.start_system) {
@@ -749,7 +757,7 @@ impl CitronApp {
                     .show(ctx, |ui| {
                         egui::Frame::default()
                             .fill(PANEL)
-                            .stroke(Stroke::new(1.0, WIN_BORDER))
+                            .stroke(Stroke::new(1.0_f32, WIN_BORDER))
                             .inner_margin(Margin::same(6))
                             .show(ui, |ui| {
                                 ui.set_width(area.width() - 12.0);
@@ -1147,9 +1155,9 @@ fn bind_chip(ui: &mut egui::Ui, label: &str, listening: bool, accent: Color32) -
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
     // resting is borderless; hover/listening get an accent ring
     let (fill, stroke, txt_col) = if listening {
-        (accent, Stroke::new(1.0, accent), BG)
+        (accent, Stroke::new(1.0_f32, accent), BG)
     } else if resp.hovered() {
-        (PANEL2, Stroke::new(1.0, accent), accent)
+        (PANEL2, Stroke::new(1.0_f32, accent), accent)
     } else {
         (PANEL2, Stroke::NONE, accent)
     };
@@ -1232,7 +1240,7 @@ fn line(ui: &mut egui::Ui) {
 
 impl eframe::App for CitronApp {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        [0.0, 0.0, 0.0, 0.0]
+        egui::Rgba::from(BG).to_array()
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
@@ -1249,13 +1257,8 @@ impl eframe::App for CitronApp {
         let ctx = ui.ctx().clone();
         self.ensure_logo(&ctx);
         let win = ctx.content_rect();
-        ui.painter().rect(
-            win.shrink(0.5),
-            CornerRadius::same(16),
-            BG,
-            Stroke::new(1.0, WIN_BORDER),
-            StrokeKind::Inside,
-        );
+        // macos draws the rounded corners and border itself
+        ui.painter().rect_filled(win, CornerRadius::same(0), BG);
 
         // window drag from empty space. added before the panels so widgets take clicks first; a
         // drag on empty space falls through here and moves the window.
@@ -1302,6 +1305,10 @@ impl eframe::App for CitronApp {
                     captured = Some("Alt".to_string());
                 }
             }
+            // a mouse button as panic key would quit the app on the very next click: ignore those
+            let captured = captured.filter(|n| {
+                !(target == RebindTarget::Panic && (n.ends_with("Click") || n.starts_with("Mouse")))
+            });
             if let Some(name) = captured {
                 match target {
                     RebindTarget::Clicker { is_left, slot } => {
@@ -1371,16 +1378,20 @@ impl eframe::App for CitronApp {
 impl CitronApp {
     fn title_bar(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
         let active = self.engine.signals.mc_running.load(Ordering::Relaxed);
+        // no gap between the bar and its bottom line, so equal top/bottom margins put the logo and
+        // the status pill exactly halfway between the window edge and the line
+        ui.spacing_mut().item_spacing.y = 0.0;
         egui::Frame::default()
             .inner_margin(Margin {
                 left: 18,
                 right: 14,
-                top: 13,
-                bottom: 12,
+                top: 9,
+                bottom: 9,
             })
             .show(ui, |ui| {
                 ui.set_min_width(ui.available_width());
                 ui.horizontal(|ui| {
+                    ui.add_space(64.0); // space for the native traffic lights
                     let lh = LOGO_H;
                     let (lr, _) =
                         ui.allocate_exact_size(Vec2::new(lh * self.logo_aspect, lh), Sense::hover());
@@ -1392,25 +1403,14 @@ impl CitronApp {
                     );
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        // with close-to-tray on, the x hides to the tray instead of quitting
-                        // (exit via the tray menu). minimize is always a normal taskbar minimize.
-                        let to_tray = self.tray && self.tray_mgr.is_some();
-                        if win_btn(ui, ic::CLOSE).clicked() {
-                            if to_tray {
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-                                self.hidden = true;
-                            } else {
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                            }
-                        }
-                        if win_btn(ui, ic::MINUS).clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-                        }
-                        ui.add_space(6.0);
+                        // close/minimize are the native traffic lights on macos
                         status_pill(ui, active, self.accent);
                     });
                 });
             });
+        // traffic lights on the same centre line as the logo and the pill
+        let line_y = ui.cursor().top() - ctx.content_rect().top();
+        os::place_traffic_lights((line_y / 2.0) as f64, 18.0);
         line(ui);
     }
 
@@ -1647,7 +1647,7 @@ impl CitronApp {
                     let col = if sel { accent } else { MUT };
                     let r = egui::Frame::default()
                         .fill(if sel { PANEL2 } else { PANEL })
-                        .stroke(if sel { Stroke::new(1.0, accent) } else { Stroke::NONE })
+                        .stroke(if sel { Stroke::new(1.0_f32, accent) } else { Stroke::NONE })
                         .corner_radius(CornerRadius::same(10))
                         .inner_margin(Margin::symmetric(14, 10))
                         .show(ui, |ui| {
@@ -1846,7 +1846,7 @@ impl CitronApp {
                         ui.painter().rect_stroke(
                             rect.expand(3.0),
                             CornerRadius::same(11),
-                            Stroke::new(2.0, c),
+                            Stroke::new(2.0_f32, c),
                             StrokeKind::Outside,
                         );
                     }
@@ -1860,12 +1860,12 @@ impl CitronApp {
         two_col(
             ui,
             |ui| {
-                option_row(ui, ic::POWER, "Start with system", "", accent, |ui| {
+                option_row(ui, ic::POWER, "Start at login", "", accent, |ui| {
                     toggle(ui, &mut self.start_system, accent);
                 })
             },
             |ui| {
-                option_row(ui, ic::TRAY, "Close to tray", "", accent, |ui| {
+                option_row(ui, ic::TRAY, "Close to menu bar", "", accent, |ui| {
                     toggle(ui, &mut self.tray, accent);
                 })
             },
@@ -1881,38 +1881,21 @@ impl CitronApp {
                 })
             },
             |ui| {
-                option_row(ui, ic::REFRESH, "Auto-update", "", accent, |ui| {
-                    toggle(ui, &mut self.autoupdate, accent);
+                option_row(ui, ic::EYE_OFF, "Hide from capture", "", accent, |ui| {
+                    toggle(ui, &mut self.screen_hide, accent);
                 })
             },
         );
+        ui.add_space(10.0);
+        option_row(ui, ic::KEYBOARD, "Dock hide key", "Hides the Dock icon", accent, |ui| {
+            if bind_chip(ui, &taskbar_label, taskbar_listening, accent) {
+                arm_taskbar = true;
+            }
+        });
         if arm_panic {
             self.rebind = Some(RebindTarget::Panic);
             self.rebind_armed_at = ui.ctx().cumulative_frame_nr();
         }
-        ui.add_space(10.0);
-        two_col(
-            ui,
-            |ui| {
-                option_row(
-                    ui,
-                    ic::EYE_OFF,
-                    "Hide from capture",
-                    "Invisible to screen share",
-                    accent,
-                    |ui| {
-                        toggle(ui, &mut self.screen_hide, accent);
-                    },
-                )
-            },
-            |ui| {
-                option_row(ui, ic::KEYBOARD, "Taskbar hide key", "Toggles taskbar", accent, |ui| {
-                    if bind_chip(ui, &taskbar_label, taskbar_listening, accent) {
-                        arm_taskbar = true;
-                    }
-                })
-            },
-        );
         if arm_taskbar {
             self.rebind = Some(RebindTarget::Taskbar);
             self.rebind_armed_at = ui.ctx().cumulative_frame_nr();
@@ -1992,7 +1975,7 @@ impl CitronApp {
             .frame(
                 egui::Frame::default()
                     .fill(PANEL)
-                    .stroke(Stroke::new(1.0, accent))
+                    .stroke(Stroke::new(1.0_f32, accent))
                     .corner_radius(CornerRadius::same(14))
                     .inner_margin(Margin::same(20)),
             )
@@ -2062,16 +2045,6 @@ fn accent_button(
     paint_icon(ui.painter(), Pos2::new(sx + 9.0, y), glyph, 16.0, accent);
     ui.painter()
         .galley(Pos2::new(sx + 26.0, y - galley.size().y / 2.0), galley, accent);
-    resp
-}
-
-fn win_btn(ui: &mut egui::Ui, glyph: char) -> egui::Response {
-    let (rect, resp) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
-    let col = if resp.hovered() { TXT } else { MUT };
-    if resp.hovered() {
-        ui.painter().rect_filled(rect, CornerRadius::same(7), PANEL2);
-    }
-    paint_icon(ui.painter(), rect.center(), glyph, 16.0, col);
     resp
 }
 

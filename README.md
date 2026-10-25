@@ -1,29 +1,33 @@
-# Citron v2
+<!-- #claude -->
+# Citron v2 (macOS)
 
-Version 2 of Citron Clicker, rebuilt from the ground up in **Rust + [egui](https://github.com/emilk/egui)** instead of .NET. (V1 was a .NET app; its source was sold and is no longer published here.)
+macOS-only fork of Citron Clicker, written in **Rust + [egui](https://github.com/emilk/egui)**.
+It is an external autoclicker for Minecraft Java Edition.
 
 ![Citron v2](screenshot.png)
 
-## Why the rewrite
-
-- **Lightweight.** One small native binary, no .NET runtime, no bundled browser. (The old self-contained .NET build was ~130 MB.)
-- **Cross-platform.** The UI and config layer are portable across Windows, macOS and Linux. The clicker *engine* is OS-specific (Windows first; macOS needs Accessibility permission; Linux works on X11, Wayland blocks synthetic input).
-- **Native feel, no webview.** egui repaints only on interaction, so the GUI won't steal frames from the game.
-
 ## Building
 
-Requires a recent Rust toolchain.
+Requires a recent Rust toolchain and the Xcode command line tools (`xcode-select --install`).
 
 ```bash
-cargo run            # debug
-cargo build --release
+cargo run --release
 ```
 
-## Layout
+## Permissions
 
-- **Left Click** / **Right Click**: per-button configuration (independent)
-- **Sounds**: click-sound packs, custom files, volume
-- **Settings**: accent, startup, tray, panic key, updates
+On first start macOS asks for two permissions. Grant them to your terminal (or the built app) under
+System Settings > Privacy & Security:
+
+- **Accessibility**: needed to send the clicks
+- **Input Monitoring**: needed to read the real mouse buttons and hotkeys
+
+## Notes
+
+- F-keys need **Fn** held unless "Use F1, F2, etc. keys as standard function keys" is enabled in
+  the keyboard settings. Rebind the panic key if that is annoying.
+- Minecraft detection is name based (`java`, `minecraft`, Lunar, Badlion, ...).
+- Tray icon, self-update, autostart and screen-capture hiding are not available on macOS.
 
 ## Credits
 

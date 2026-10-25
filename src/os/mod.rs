@@ -1,12 +1,5 @@
-//! os input layer. all win32 lives in `win` (cfg windows); `stub` mirrors the public surface as
-//! no-ops so the rest of the app compiles everywhere.
+// #claude
+//! os input layer. macos only: quartz event services + appkit live in `mac_claude`.
 
-#[cfg(windows)]
-mod win;
-#[cfg(windows)]
-pub use win::*;
-
-#[cfg(not(windows))]
-mod stub;
-#[cfg(not(windows))]
-pub use stub::*;
+mod mac_claude;
+pub use mac_claude::*;

@@ -1,15 +1,8 @@
-//! system tray icon. real on windows, no-op stub elsewhere. icon lives on the event-loop thread,
-//! events polled each frame via poll().
+// #claude
+//! menu bar icon (macos), see `mac_claude`.
 
-#[cfg(windows)]
-mod win;
-#[cfg(windows)]
-pub use win::*;
-
-#[cfg(not(windows))]
-mod stub;
-#[cfg(not(windows))]
-pub use stub::*;
+mod mac_claude;
+pub use mac_claude::*;
 
 pub enum TrayAction {
     Show,

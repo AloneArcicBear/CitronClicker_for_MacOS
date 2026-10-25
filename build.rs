@@ -1,11 +1,3 @@
-fn main() {
-    #[cfg(windows)]
-    {
-        println!("cargo:rerun-if-changed=assets/branding/citron.ico");
-        let mut res = winresource::WindowsResource::new();
-        res.set_icon("assets/branding/citron.ico");
-        if let Err(e) = res.compile() {
-            println!("cargo:warning=icon embed failed: {e}");
-        }
-    }
-}
+// #claude
+// nothing to do at build time on macos (the windows icon embedding was removed).
+fn main() {}
